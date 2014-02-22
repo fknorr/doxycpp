@@ -1,0 +1,12 @@
+@import "style.css";
+
+html, body, #content, #content-td {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    width: 100%;
+}
+
+#nav-td {
+    display: none;
+}

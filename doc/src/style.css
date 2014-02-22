@@ -1,0 +1,303 @@
+html {
+    font: 10pt sans-serif;
+    margin: 0;
+    padding-top: 5px;
+    text-align: left;
+}
+
+body {
+    position: relative;
+    width: 1000px;
+    margin: 0 auto;
+    overflow-y: scroll;
+    padding: 10px 0;
+}
+
+div {
+    margin: 0;
+    padding: 0;
+}
+
+table {
+    border-spacing: 0;
+}
+
+table, tr, td {
+    border: 0;
+    padding: 0;
+    margin: 0;
+}
+
+td {
+    vertical-align: top;
+    text-align: left;
+}
+
+.page-type {
+    padding-left: 5px;
+    font-size: 11pt;
+    font-weight: normal;
+    color: #808080;
+}
+
+#outer {
+    width: 100%;
+    height: 100%;
+}
+
+#nav-td {
+    padding-right: 10px;
+}
+
+#nav {
+    position: relative;
+    width: 180px;
+    margin: 0 0 5px 10px;
+    overflow-x: hidden;
+    white-space: nowrap;
+    font-size: 8pt;
+}
+
+#nav h3 {
+    font-size: 8pt;
+    font-weight: bold;
+    margin: 12px 0 2px 0;
+}
+
+#nav li {
+    list-style-type: none;
+}
+
+#nav ul, #nav li {
+    padding: 0;
+    margin: 0;
+}
+
+.nav-up {
+    font-size: 10pt;
+}
+
+a.nav-up  {
+    background: url("up.png") no-repeat;
+    padding-left: 20px;
+}
+
+#nav-overlay {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 15px;
+    height: 100%;
+    background: url("fade.png") repeat-y right;
+}
+
+#content-td {
+    border-left: 1px solid gray;
+    padding: 0 0 10px 15px;
+    width: 800px;
+}
+
+#content {
+    width: 100%;
+}
+
+a {
+    text-decoration: none;
+    color: #2020a0;
+}
+
+td p {
+    padding: 0;
+    margin: 0;
+}
+
+h2 {
+    font-size: 16pt;
+    font-weight: bold;
+    margin: 10px 0 15px 0;
+}
+
+h3 {
+    font-size: 12pt;
+    font-weight: bold;
+    margin: 25px 0 10px 0;
+}
+
+h4 {
+    font-size: 10pt;
+    font-weight: bold;
+    margin: 5px 0 0 0;
+    padding:0;
+}
+
+
+ol.overview-list li {
+    padding: 0 5px;
+    margin-bottom: 10px;
+}
+
+ol.details-list li, ul.inline-list li{
+    padding-left: 5px;
+    margin-bottom: 50px;
+}
+
+
+table.decllist
+{
+    margin-left: 20px;
+}
+
+td.decltype
+{
+    text-align: right;
+    color: #808080;
+    padding-right: 6px;
+}
+
+.name
+{
+    font-weight: bold;
+}
+
+.init
+{
+    color: #808080;
+}
+
+.init a
+{
+    color: #6060c0;
+}
+
+div.par {
+    margin: 5px  0 15px 30px;
+/*     border-left: 5px solid #e0e0e0;
+    padding-left: 15px; */
+}
+
+div.listing
+{
+    background-color: #f8f8f8;
+    border: 1px solid #c0c0c0;
+    padding: 2px;
+    margin: 7px 4px;
+    font-family: monospace;
+    white-space: nowrap;
+}
+
+.hl-keywordflow, .hl-keywordtype, .hl-keyword
+{
+    font-weight: bold;
+}
+
+.hl-stringliteral
+{
+    color: #a00000;
+}
+
+.hl-preprocessor
+{
+    color: #00a0a0;
+}
+
+.hl-comment
+{
+    color: #208020;
+}
+
+table.paramlist td {
+   border-left: 5px solid transparent;
+   border-top: 5px solid transparent;
+}
+
+table.paramlist td:first-child {
+   border-left: 0;
+}
+
+table.paramlist tr:first-child td {
+   border-top: 0;
+}
+
+td.paramname
+{
+    font-weight: bold;
+    color: #800000;
+    padding-right: 8px;
+    white-space: nowrap;
+}
+
+
+p.include {
+     font-size: 8pt;
+     font-family: monospace; 
+     margin-bottom: 15px;
+}
+
+p.include, p.include a {    
+     color: #008080;
+}
+
+p.include a:hover {
+    text-decoration: underline;
+}
+
+p.decl, a.decl {
+     font-family: monospace; 
+     color: #006000;
+     margin-bottom: 12px;
+}
+
+a.decl:hover {
+    background-color: #f0f0f0;
+}
+
+td.declnum {
+    padding-right: 10px;
+}
+
+.template {
+    color: #808080;
+}
+
+
+p.decl a, a.decl a {
+    color: #408040;
+}
+
+p.decl a:hover, a.decl a:hover {
+    color: #408040;
+    text-decoration: underline;
+}
+
+.brief {
+    font-weight: bold;
+}
+
+.details {
+    margin-top: 15px;
+}
+
+.details h4 {
+    margin-top: 20px;
+}
+
+.tt {
+    font-family: monospace;
+}
+
+h4 a, h3 a, h2 a, h1 a {
+    color: black;
+}
+
+h4 a:hover, h3 a:hover, h2 a:hover, h1 a:hover {
+    text-decoration: underline;
+}
+
+.varlist li {
+    margin-bottom: 10px;
+}
+
+.varlist p.head {
+    font-weight: bold;
+}
+
