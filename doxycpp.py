@@ -1,5 +1,21 @@
 #!/usr/bin/env python
 
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+    
 import hashlib, copy, sys, locale, os
 from lxml import etree
 
@@ -27,11 +43,24 @@ def localize(spec):
     return locale[spec] if spec in locale else spec
 
 
-if len(sys.argv) != 2:
-    print("Syntax: %s <output directory>" % sys.argv[0])
+if len(sys.argv) > 1 and sys.argv[1] == "--version":
+    print("DoxyC++ Doxygen XML to HTML postprocessor version 1.0.3\n"
+        + "(C) 2014, Fabian Knorr <https://github.com/fknorr/doxycpp>\n\n"
+        + "DoxyC++ is free software: you can redistribute it and/or modify it under\n"
+        + "the terms of the GNU General Public License as published by the Free Software\n"
+        + "Foundation, either version 3 of the License, or (at your option) any later\n"
+        + "version.", file=sys.stderr)
     sys.exit(1)
-else:
-    html_dir = sys.argv[1]
+
+if len(sys.argv) < 2 or (len(sys.argv) > 1 and sys.argv[1] == "--help"):
+    print("Syntax: " + sys.argv[0] + " <output directory>\n"
+        + "        " + sys.argv[0] + " --help     Display this help\n"
+        + "        " + sys.argv[0] + " --version  Display version information\n\n"
+        + "DoxyC++ will read XML files from the current directory.", file=sys.stderr)
+    sys.exit(1)
+
+    
+html_dir = sys.argv[1]
 
 
 # A Declaration, extracted from XML
