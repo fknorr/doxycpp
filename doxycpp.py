@@ -66,7 +66,7 @@ class decl:
         self.args = None
         self.explicit = False
 
-# Maps Doxygen IDs to "decl" instances
+# Maps weird Doxygen (like "classfn_1_1definition__array_4") IDs to "decl" instances
 di = dict()
 
 # Reads a <compounddef> or <memberdef> tag, updating "di"
@@ -165,12 +165,26 @@ root = decl("root")
 root.kind = "root"
 root.name = ""
 
-# Recursive, starting from the root
-for key, val in di.items(): hierarchy(val)                
+namespaces = {}
+
+# Partially recursive
+for key, val in di.items():
+    # Add parents where a hierarchy exists in the XML
+    hierarchy(val)
+    # Namespaces don't contain each other, remember their full names to resolve them later
+    if val.kind == "namespace":
+        namespaces[val.name] = key
+
 for key, val in di.items(): 
     if val.parent == None:
-        val.parent = root
-        root.all_members.add(key)
+        new_parent = root;
+        # Resolve nested namespaces by their scoped name
+        if val.kind == "namespace" and "::" in val.name:
+            container = namespaces[val.name[0:val.name.rfind("::")]]
+            if container and container in di: new_parent = di[container]
+        val.parent = new_parent
+        new_parent.all_members.add(key)
+
 
 # Brings all names of declarations to a common format, recursively
 def init_names(decl):
