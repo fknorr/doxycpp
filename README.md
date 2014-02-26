@@ -18,6 +18,14 @@ and the overall navigation is simplified.
 
 ![Screenshot](doc/src/screenshot.png)
 
+#### Requirements
+
+DoxyC++ is written in Python 3, runs fine with Python 3.3.4 and may also work
+with earlier or later versions.
+
+For XML parsing, it requires python-lxml (Python3 bindings for libbxml2 and 
+libxslt libraries), e.g. version 3.3.0.
+
 #### License
 
 DoxyC++ is licensed under the GNU GPL Version 3.

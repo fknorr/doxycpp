@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 
 # This program is free software: you can redistribute it and/or modify
@@ -59,167 +59,266 @@ if len(sys.argv) < 2 or (len(sys.argv) > 1 and sys.argv[1] == "--help"):
         + "DoxyC++ will read XML files from the current directory.", file=sys.stderr)
     sys.exit(1)
 
-    
-html_dir = sys.argv[1]
+
+output_dir = sys.argv[1]
 
 
-# A Declaration, extracted from XML
-class decl:
+# A Declaration, extracted from XML. This is paritally resolved information and still contains
+# some XML tags.
+class Declaration:
     def __init__(self, _id):
+        # The containing Declaration instance
         self.parent = None
+        
+        # The doxygen ID, as mapped by the declarations dict
         self.id = _id
-        self.vis = "public"
-        self.static = False
+
+        # The visiblity inside "parent", e.g. "public" or "private"
+        self.visibility = "public"
+        
+        # Whether the declaration is static within "parent"
+        self.is_static = False
+        
+        # The kind of declaration, e.g. "typedef", "struct", or "function"
         self.kind = "none"
+        
+        # The (short) name of the declaration inside its scope, may initially
+        # contain scoping information but will be removed later
         self.name = ""
+
+        # The full, scoped name in the global namespace
         self.full_name = ""
+
+        # The @brief-description
         self.brief = None
+
+        # Doxygen IDs of all direct (non-inherited) member
         self.members = set()
+
+        # Doxygen IDs of all direct and inherited members
         self.all_members = set()
+
+        # The declaration's relative URL, that is either a file name like "namespace-sde-b191.html"
+        # or a file name with an anchor for an inlined definition
+        # (like "namespace-sde-b191.html#typedef-sde-floatmax_t-896f")
         self.url = ""
+
+        # The <a>nchor part of a URL if it is an inline_doc (e.g. "typedef-sde-floatmax_t-896f")
         self.anchor = ""
+
+        # The XML <definition> tag usually containing the full declaration code
         self.definition = None
-        self.includes = []
-        self.inline = False
-        self.virtual = False
-        self.tplist = None
-        self.palist = None
+
+        # All XML <includes> tags in this declaration
+        self.include_files = []
+
+        # Whether the declared function is marked "inline"
+        self.is_inline = False
+
+        # Whether the declared function is marked "virtual"
+        self.is_virtual = False
+
+        # The XML <templateparamlist> tag associated with this declaration, if any
+        self.template_params = None
+
+        # The XML <initializer> tag of this declaration, if any
         self.init = None
+
+        # The XML <type> tag of this declaration
         self.type = None
-        self.enumvals = []
-        self.bases = []
+
+        # A list of XML <enumvalue> tags associated with this declaration
+        self.enum_values = []
+
+        # A list of XML <basecompoundref> tags
+        self.inherits_from = []
+
+        # Stores whether the documentation of this node will be included into it's parent's page
+        # This is true e.g. for typedefs.
         self.inline_doc = False
+
+        # The XML <detaileddescription> of this declaration
         self.details = None
+
+        # Whether the node is just an arbitrary collections of objects and thus does
+        # not participate in the scope hierarchy (e.g. file member listings)
         self.is_collection = False
+
+        # The content of the XML <title> tag associated with this declaration
         self.title = None
-        self.args = None
-        self.explicit = False
 
-# Maps weird Doxygen (like "classfn_1_1definition__array_4") IDs to "decl" instances
-di = dict()
+        # The XML <argstring> tag of the declared function (if any)
+        self.parameters = None
 
-# Reads a <compounddef> or <memberdef> tag, updating "di"
-def read_memberdef(root, ref, kind):
-    ident = root.get("id")
-    if ref != None: 
-        ref.all_members.add(ident)
-        ref.members.add(ident)
-    if not ident in di:
-        di[ident] = decl(ident)    
-        mb = di[ident]        
-        mb.kind = kind 
-        mb.inline_doc = (kind == "typedef" or kind == "variable" or kind == "define")
-        mb.is_collection = (kind == "group" or kind == "page" or kind == "file")
-        mb.vis = root.get("prot")
-        mb.static = root.get("static") == "yes"
-        mb.virtual = root.get("virtual") == "yes"
-        mb.inline = root.get("inline") == "yes"
-        mb.explicit = root.get("explicit") == "yes"
+        # Whether the declaration (e.g. a constructor) was declared "explicit
+        self.is_explicit = False
 
-        for e in root.iterchildren(tag=etree.Element):
-            if e.tag == "type": mb.type = e
-            elif e.tag == "title": mb.title = e.text
-            elif e.tag == "definition": mb.definition = e
-            elif e.tag == "argsstring": mb.args = e
-            elif e.tag == "name" or e.tag == "compoundname": mb.name = e.text
-            elif e.tag == "inbodydescription": mb.ibdescr = e
-            elif e.tag == "briefdescription": mb.brief = e
-            elif e.tag == "initializer": mb.init = e
-            elif e.tag == "includes": mb.includes.append(e)
-            elif e.tag == "detaileddescription": mb.details = e
-            elif e.tag == "templateparamlist": mb.tplist = e
-            elif e.tag == "enumvalue": mb.enumvals.append(e)
-            elif e.tag == "basecompoundref": mb.bases.append(e)
+
+# Maps weird Doxygen IDs (like "classfn_1_1definition__array_4") to Declaration instances
+declarations = dict()
+
+
+
+# Reads a <compounddef> or <memberdef> tag, updating "declarations"
+#   xml_node: The XML node to read from
+#   parent_decl: The Declaration object containing this declaratinon, or None.
+#   kind: The kind of declaration, corresponding to Declaration.kind
+def read_xml_memberdef(xml_node, parent_decl, kind):
+    id = xml_node.get("id")
+    
+    # Add itself to parent
+    if parent_decl != None: 
+        parent_decl.all_members.add(id)
+        parent_decl.members.add(id)
+
+    # The ID might already have been visited (who knows?)
+    if not id in declarations:  
+        member = Declaration(id)     
+        declarations[id] = member
+        member.kind = kind 
+        member.inline_doc = (kind == "typedef" or kind == "variable" or kind == "define")
+        member.is_collection = (kind == "group" or kind == "page" or kind == "file")
+        member.visibility = xml_node.get("prot")
+        member.is_static = xml_node.get("static") == "yes"
+        member.is_virtual = xml_node.get("virtual") == "yes"
+        member.is_inline = xml_node.get("inline") == "yes"
+        member.is_explicit = xml_node.get("explicit") == "yes"
+
+        for e in xml_node.iterchildren(tag=etree.Element):
+            if e.tag == "type": member.type = e
+            elif e.tag == "title": member.title = e.text
+            elif e.tag == "definition": member.definition = e
+            elif e.tag == "argsstring": member.parameters = e
+            elif e.tag == "name" or e.tag == "compoundname": member.name = e.text
+            elif e.tag == "inbodydescription": member.ibdescr = e
+            elif e.tag == "briefdescription": member.brief = e
+            elif e.tag == "initializer": member.init = e
+            elif e.tag == "includes": member.include_files.append(e)
+            elif e.tag == "detaileddescription": member.details = e
+            elif e.tag == "templateparamlist": member.template_params = e
+            elif e.tag == "enumvalue": member.enum_values.append(e)
+            elif e.tag == "basecompoundref": member.inherits_from.append(e)
+
+            # "#define"d macros need to have their parameter list built manually
             elif e.tag == "param":
                 for f in e.iterchildren(tag=etree.Element):
                     if kind == "define" and f.tag == "defname":
-                        if mb.args != None: mb.args.text += ", "
+                        if member.parameters != None: member.parameters.text += ", "
                         else: 
-                            mb.args = etree.Element("argsstring")
-                            mb.args.text = "("
-                        mb.args.text += f.text
-        if kind == "define" and mb.args != None:
-            mb.args.text += ")"    
-        return mb
-    else: return di[ident]
-
-# Read XML files
-for xml in os.listdir():
-    xtree = etree.parse(xml)
-    # <compounddef>s contain <memberdef>s and <innerclass>es, which hold the main information
-    tables = xtree.xpath("/doxygen/compounddef")
-    for t in tables: 
-        ref = read_memberdef(t, None, t.get("kind"))
-        for e in t.iterchildren(tag=etree.Element):
-            if e.tag == "innerclass" or e.tag == "innerfile" or e.tag == "innerdir":
-                ref.members.add(e.get("refid"))
-                ref.all_members.add(e.get("refid"))
-            elif e.tag == "sectiondef": 
-                for f in e.iterchildren(tag="memberdef"):
-                    read_memberdef(f, ref, f.get("kind"))
-            elif e.tag == "listofallmembers" and not ref.is_collection:
-                for f in e.iterchildren(tag="member"):
-                    ref.all_members.add(f.get("refid"))
+                            member.parameters = etree.Element("argsstring")
+                            member.parameters.text = "("
+                        member.parameters.text += f.text
+        if kind == "define" and member.parameters != None:
+            member.parameters.text += ")"    
+        return member
         
-# Unresolved identifiers
-unres = []
+    else: return declarations[id]
+
+
+
+# Parse all .xml files in the current directory, updating "declarations"
+for file_name in os.listdir():
+    if len(file_name) > 3 and file_name[-4:] == ".xml" and os.path.isfile(file_name):
+        xtree = etree.parse(file_name)
+        # <compounddef>s contain <memberdef>s and <innerclass>es, which hold the main information
+        compounds = xtree.xpath("/doxygen/compounddef")
+        for xml_node in compounds: 
+            delcaration = read_xml_memberdef(xml_node, None, xml_node.get("kind"))
+            for child in xml_node.iterchildren(tag=etree.Element):
+                if child.tag == "innerclass" or child.tag == "innerfile" or child.tag == "innerdir":
+                    delcaration.members.add(child.get("refid"))
+                    delcaration.all_members.add(child.get("refid"))
+                elif child.tag == "sectiondef": 
+                    for f in child.iterchildren(tag="memberdef"):
+                        read_xml_memberdef(f, delcaration, f.get("kind"))
+                elif child.tag == "listofallmembers" and not delcaration.is_collection:
+                    for f in child.iterchildren(tag="member"):
+                        delcaration.all_members.add(f.get("refid"))
+
+
 
 # Takes an arbitrary string, removes all non-alnum and non-_ characters, concatenating it 
 # with -, and adding a hash to avoid collisions
-def urlify(string):
-    r = ""
-    lastdot = True
-    for c in string:
-        if (((c >= '0' and c <= '9') or (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_')): 
-            r += c.lower()
-            lastdot = False
-        elif not lastdot:
-            r += '-'
-            if c == '~': r += "not-"
-            lastdot = True
-    if not lastdot: r += '-'
-    r += hashlib.md5(bytearray(string, 'utf-8')).hexdigest()[0:4]
-    return r
+def urlify_string(string):
+    result = ""
+    # Collapse multiple non-[0-9a-zA-Z_]-characters into a single "-"
+    last_was_special_char = False
+    for char in string:
+        if (((char >= '0' and char <= '9') or (char >= 'a' and char <= 'z')
+                or (char >= 'A' and char <= 'Z') or char == '_')): 
+            result += char.lower()
+            last_was_special_char = False
+        elif not last_was_special_char:
+            result += '-'
+            if char == '~': result += "not-"
+            last_was_special_char = True
+    # Ensure there's a "-" before the hash
+    if not last_was_special_char: result += '-'
+    result += hashlib.md5(bytearray(string, 'utf-8')).hexdigest()[0:4]
+    return result
 
 
-def hierarchy(root):
-    if not root.is_collection: 
-        for id in root.members:
-            if id in di and di[id].parent == None:
-                di[id].parent = root
-                hierarchy(di[id])   
-                if di[id].includes == []: di[id].includes = root.includes
 
-root = decl("root")
-root.kind = "root"
-root.name = ""
+# Recursively traverses the "declarations" dictionary and updates the "parent" field of
+# each declaration to point to the containing node
+def build_hierarchy(parent_decl):
+    if not parent_decl.is_collection: 
+        for id in parent_decl.members:
+            if id in declarations:
+                member = declarations[id]
+                # One node will usually be visited multiple times, only update "parent" once
+                if member.parent == None:
+                    member.parent = parent_decl
+                    build_hierarchy(declarations[id])
+                    # Member functions are usually available by including their classes header
+                    if declarations[id].include_files == []:
+                        declarations[id].include_files = parent_decl.include_files
 
+
+# Maps fully scoped namespace names to their Declaration object.
+# Needed to resolve nested namespace hierarchies, as they don't contain each other as members
 namespaces = {}
 
-# Partially recursive
-for key, val in di.items():
+# Stupidly try to build a hierarchy for every declaration (not as recursive as possible)
+for key, val in declarations.items():
     # Add parents where a hierarchy exists in the XML
-    hierarchy(val)
+    build_hierarchy(val)
     # Namespaces don't contain each other, remember their full names to resolve them later
     if val.kind == "namespace":
         namespaces[val.name] = key
 
-for key, val in di.items(): 
+
+
+# Dummy node for the "Index" page
+root = Declaration("root")
+root.kind = "root"
+root.name = ""
+
+# Assign all orphaned nodes to "root" so they will appear on the index page.
+# This applies for all global namespace members and preprocessor #defines.
+for key, val in declarations.items(): 
     if val.parent == None:
-        new_parent = root;
+        new_parent = root
         # Resolve nested namespaces by their scoped name
         if val.kind == "namespace" and "::" in val.name:
             container = namespaces[val.name[0:val.name.rfind("::")]]
-            if container and container in di: new_parent = di[container]
+            if container and container in declarations: new_parent = declarations[container]
         val.parent = new_parent
         new_parent.all_members.add(key)
 
 
-# Brings all names of declarations to a common format, recursively
+
+# Recursively postprocesses all "name" and "full_name" fields of every declaration.
+# In the XML, some names include scope while others don't (I guess nobody checked the XML output
+# for consistency). This function ensures "name" is scope-less while adding full scope prefixes
+# to full_name based on the members/parent hierarchy built above.
 def init_names(decl):
+    # Rename anonymous enums
     if len(decl.name) > 0 and decl.name[0] == '@':
         decl.name = "(anonymous)"
+
     if "::" in decl.name:
+        # Find the last, not template-parameter-enclosed occurrence of "::"
         start = 0; level = 0; i=0
         for c in decl.name:
             if c == '<': level += 1
@@ -227,27 +326,39 @@ def init_names(decl):
             elif c == ':' and level == 0: start = i+1
             i += 1
         decl.name = decl.name[start:]
-    
+
+    # Directory names should end in "/"
     if decl.kind == "dir": decl.name += "/"
-        
+
+    # Add scope prefixes for identifiers
     if decl.parent != None and decl.kind != "file" and decl.parent.full_name != "": 
         decl.full_name = decl.parent.full_name + "::" + decl.name
+    # And simply concatenate directory names as they already end in "/"
     elif decl.parent != None: 
         decl.full_name = decl.parent.full_name + decl.name
-    
-    def page_url(kind, fn):
-        return kind + "-" + urlify(fn) if fn != "" else "index"
-    
+
+    # Creates the canonical URL (without .html) for a declaration
+    def make_page_url(decl):
+        if decl.full_name != "":
+            return decl.kind + "-" + urlify_string(decl.full_name)
+        else:
+            return "index"
+
+    # Non-inline (i.e. integrated in their parent's page) declarations have an own url,
+    # inline docs are identified by an <a>nchor inside their parent
     if not decl.inline_doc:
-        decl.url = page_url(decl.kind, decl.full_name) + ".html"
+        decl.url = make_page_url(decl) + ".html"
     elif decl.parent.url != None: 
-        decl.anchor = page_url(decl.kind, decl.full_name)
+        decl.anchor = make_page_url(decl)
         decl.url = decl.parent.url + "#" + decl.anchor
-        
+
+    # Proceed recursively for all members
     if not decl.is_collection:
         for id in decl.all_members:
-            if id in di: init_names(di[id])
+            if id in declarations: init_names(declarations[id])
 
+
+# Recursively generate name and full_name fields
 init_names(root)
 root.title = localize("index")
 root.url = "index.html"
@@ -269,6 +380,7 @@ def abbrev(text, depth, skipped=False):
         elif depth > 0: skipped = True
         else: out += c
     return out, depth
+
     
 def to_html_abbrev(tree, dest, nolinks=False):
     depth = 0
@@ -276,15 +388,15 @@ def to_html_abbrev(tree, dest, nolinks=False):
     length = len(dest.text) if dest.text != None else 0
     for e in tree.iterchildren(tag="ref"):
         a = etree.SubElement(dest, "a" if not nolinks else "span")
-        if e.get("refid") in di and not nolinks: 
-            a.set("href", di[e.get("refid")].url)
+        if e.get("refid") in declarations and not nolinks: 
+            a.set("href", declarations[e.get("refid")].url)
         a.text, depth = abbrev(e.text, depth)
         a.tail, depth = abbrev(e.tail, depth)
         if a.text != None: length += len(a.text) 
         if a.tail != None: length += len(a.tail)
     return length
     
-                
+
 def to_html(tree, dest, nolinks=False):
     length = [0]
     def addlen(s): 
@@ -298,8 +410,8 @@ def to_html(tree, dest, nolinks=False):
         if e.tag == "ref":
             if not nolinks:
                 a = etree.SubElement(dest, "a")
-                if e.get("refid") and e.get("refid") in di and di[e.get("refid")].url != None:
-                    a.set("href", di[e.get("refid")].url)
+                if e.get("refid") and e.get("refid") in declarations and declarations[e.get("refid")].url != None:
+                    a.set("href", declarations[e.get("refid")].url)
             else:
                 a = etree.SubElement(dest, "span")
             a.tail = e.tail; addlen(e.tail)
@@ -403,12 +515,12 @@ def to_html(tree, dest, nolinks=False):
     
 def any_decl(decl, dest):
     dest.set("class", "decl")
-    if decl.tplist != None:
+    if decl.template_params != None:
         span = etree.SubElement(dest, "span")
         span.set("class", "template")
         span.text = "template <"
         comma = False
-        for param in decl.tplist.iterchildren(tag=etree.Element):
+        for param in decl.template_params.iterchildren(tag=etree.Element):
             types = param.xpath("type")
             if len(types) > 0: 
                 if comma: span2.tail = ", "
@@ -431,9 +543,9 @@ def func_var_decl(decl, dest, nolinks=False, abbrev=False):
     span = etree.SubElement(dest, "span")
     span.set("class", "specs")
     span.text = ""
-    if decl.explicit: span.text += "explicit "
-    if decl.static: span.text += "static "
-    if decl.virtual: span.text += "virtual "
+    if decl.is_explicit: span.text += "explicit "
+    if decl.is_static: span.text += "static "
+    if decl.is_virtual: span.text += "virtual "
     length = len(span.text)
     span = etree.SubElement(dest, "span")
     span.set("class", "type")
@@ -448,11 +560,11 @@ def func_var_decl(decl, dest, nolinks=False, abbrev=False):
     span = etree.SubElement(dest, "span")
     span.set("class", "name")
     span.text = decl.name
-    if decl.args != None: 
+    if decl.parameters != None: 
         span = etree.SubElement(dest, "span")
         span.set("class", "arglist")
-        if not abbrev: to_html(decl.args, span, nolinks)
-        else: to_html_abbrev(decl.args, span, nolinks)
+        if not abbrev: to_html(decl.parameters, span, nolinks)
+        else: to_html_abbrev(decl.parameters, span, nolinks)
     if decl.init != None and not abbrev:
         span = etree.SubElement(dest, "span")
         span.set("class", "init")
@@ -483,10 +595,10 @@ def define_decl(decl, dest):
 
 def base_names(derived):
     names = set([derived.name])
-    for base in derived.bases:
+    for base in derived.inherits_from:
         id = base.get("refid")
-        if id in di: 
-            names = names.union(base_names(di[id]))
+        if id in declarations: 
+            names = names.union(base_names(declarations[id]))
     return names
     
     
@@ -500,15 +612,15 @@ def struct_decl(decl, dest):
     span.text = decl.name    
 
     comma = False
-    for base in decl.bases:
+    for base in decl.inherits_from:
         etree.SubElement(dest, "br")
         span = etree.SubElement(dest, "span")
         span.text = "\xa0\xa0\xa0\xa0" + (", " if comma else ": ")
         if not comma: comma = True
         span.text += base.get("prot") + " "
         if base.get("virt") == "virtual": span.text += "virtual "
-        if base.get("refid") in di:
-            etree.SubElement(dest, "a", href = di[base.get("refid")].url).text = base.text
+        if base.get("refid") in declarations:
+            etree.SubElement(dest, "a", href = declarations[base.get("refid")].url).text = base.text
         else: etree.SubElement(dest, "span").text = base.text
         
                     
@@ -535,8 +647,8 @@ def write_html(title, nav, cont, url):
 global_nav = []
 global_nav_dict = dict()
 for glob in root.all_members:
-    if glob in di: 
-        mb = di[glob]
+    if glob in declarations: 
+        mb = declarations[glob]
         if not mb.kind in global_nav_dict: global_nav_dict[mb.kind] = []
         global_nav_dict[mb.kind].append(mb)
 
@@ -623,7 +735,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
     include_dict = dict()
     for decl in decls:
         if decl.kind != "file":
-            for inc in decl.includes:
+            for inc in decl.include_files:
                 include_dict[inc.get("refid")] = inc
             
     if len(include_dict) > 0:
@@ -637,8 +749,8 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             include_span = etree.SubElement(include_div, "span")    
             include_span.text = '#include <'
             a = etree.SubElement(include_span, "a")
-            if inc.get("refid") in di:
-                include_file = di[inc.get("refid")]
+            if inc.get("refid") in declarations:
+                include_file = declarations[inc.get("refid")]
                 a.set("href", include_file.url)
                 a.text = include_file.full_name
             else:
@@ -691,7 +803,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             par.set("class", "par")
             table = etree.SubElement(par, "table")
             table.set("class", "paramlist")
-            for val in decl.enumvals:
+            for val in decl.enum_values:
                 tr = etree.SubElement(table, "tr")
                 td = etree.SubElement(tr, "td")
                 td.set("class", "paramname")
@@ -712,12 +824,12 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             
         members = dict()
         for id in decl.all_members:
-            if id not in di: continue
-            e = di[id]
+            if id not in declarations: continue
+            e = declarations[id]
             
-            if e.vis == "private" or e.vis == "protected": key = e.vis
+            if e.visibility == "private" or e.visibility == "protected": key = e.visibility
             else: key = "public"
-            if e.static and (e.kind == "function" or e.kind == "variable"): 
+            if e.is_static and (e.kind == "function" or e.kind == "variable"): 
                 key += " static"
             if e.kind == "struct" or e.kind == "class" or e.kind == "typedef" or e.kind == "enum":
                 key += " types"
@@ -870,7 +982,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
     
     if len(decls) > 1 or len(inline) > 0:
         page.append(inline)
-    write_html(page_title, nav, page, html_dir + "/" + decls[0].url)
+    write_html(page_title, nav, page, output_dir + "/" + decls[0].url)
     
     for all_decls, parent, parent_links in children:
         child_decls = []
