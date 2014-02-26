@@ -608,8 +608,12 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             include_span = etree.SubElement(include_div, "span")    
             include_span.text = '#include <'
             a = etree.SubElement(include_span, "a")
-            if inc.get("refid") in di: a.set("href", di[inc.get("refid")].url)
-            a.text = inc.text
+            if inc.get("refid") in di:
+                include_file = di[inc.get("refid")]
+                a.set("href", include_file.url)
+                a.text = include_file.full_name
+            else:
+                a.text = inc.text
             a.tail = ">"
         
     inline = etree.Element("div", id="inline")
