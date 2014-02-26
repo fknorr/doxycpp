@@ -66,12 +66,12 @@ output_dir = sys.argv[1]
 # A Declaration, extracted from XML. This is paritally resolved information and still contains
 # some XML tags.
 class Declaration:
-    def __init__(self, _id):
+    def __init__(self, _doxygen_id):
         # The containing Declaration instance
         self.parent = None
         
         # The doxygen ID, as mapped by the declarations dict
-        self.id = _id
+        self.doxygen_id = _doxygen_id
 
         # The visiblity inside "parent", e.g. "public" or "private"
         self.visibility = "public"
@@ -90,7 +90,7 @@ class Declaration:
         self.full_name = ""
 
         # The @brief-description
-        self.brief = None
+        self.brief_description = None
 
         # Doxygen IDs of all direct (non-inherited) member
         self.members = set()
@@ -101,10 +101,10 @@ class Declaration:
         # The declaration's relative URL, that is either a file name like "namespace-sde-b191.html"
         # or a file name with an anchor for an inlined definition
         # (like "namespace-sde-b191.html#typedef-sde-floatmax_t-896f")
-        self.url = ""
+        self.target_url = ""
 
         # The <a>nchor part of a URL if it is an inline_doc (e.g. "typedef-sde-floatmax_t-896f")
-        self.anchor = ""
+        self.target_url_anchor = ""
 
         # The XML <definition> tag usually containing the full declaration code
         self.definition = None
@@ -122,10 +122,10 @@ class Declaration:
         self.template_params = None
 
         # The XML <initializer> tag of this declaration, if any
-        self.init = None
+        self.initializer = None
 
-        # The XML <type> tag of this declaration
-        self.type = None
+        # The XML <type> tag of this declaration, i.e. the return type or variable type
+        self.data_type = None
 
         # A list of XML <enumvalue> tags associated with this declaration
         self.enum_values = []
@@ -138,14 +138,14 @@ class Declaration:
         self.inline_doc = False
 
         # The XML <detaileddescription> of this declaration
-        self.details = None
+        self.detailed_description = None
 
         # Whether the node is just an arbitrary collections of objects and thus does
         # not participate in the scope hierarchy (e.g. file member listings)
         self.is_collection = False
 
-        # The content of the XML <title> tag associated with this declaration
-        self.title = None
+        # The page title if this is a special page
+        self.page_title = None
 
         # The XML <argstring> tag of the declared function (if any)
         self.parameters = None
@@ -164,17 +164,17 @@ declarations = dict()
 #   parent_decl: The Declaration object containing this declaratinon, or None.
 #   kind: The kind of declaration, corresponding to Declaration.kind
 def read_xml_memberdef(xml_node, parent_decl, kind):
-    id = xml_node.get("id")
+    doxygen_id = xml_node.get("id")
     
     # Add itself to parent
     if parent_decl != None: 
-        parent_decl.all_members.add(id)
-        parent_decl.members.add(id)
+        parent_decl.all_members.add(doxygen_id)
+        parent_decl.members.add(doxygen_id)
 
-    # The ID might already have been visited (who knows?)
-    if not id in declarations:  
-        member = Declaration(id)     
-        declarations[id] = member
+    # The doxygen_id might already have been visited (who knows?)
+    if not doxygen_id in declarations:  
+        member = Declaration(doxygen_id)     
+        declarations[doxygen_id] = member
         member.kind = kind 
         member.inline_doc = (kind == "typedef" or kind == "variable" or kind == "define")
         member.is_collection = (kind == "group" or kind == "page" or kind == "file")
@@ -185,16 +185,16 @@ def read_xml_memberdef(xml_node, parent_decl, kind):
         member.is_explicit = xml_node.get("explicit") == "yes"
 
         for e in xml_node.iterchildren(tag=etree.Element):
-            if e.tag == "type": member.type = e
-            elif e.tag == "title": member.title = e.text
+            if e.tag == "type": member.data_type = e
+            elif e.tag == "title": member.page_title = e.text
             elif e.tag == "definition": member.definition = e
             elif e.tag == "argsstring": member.parameters = e
             elif e.tag == "name" or e.tag == "compoundname": member.name = e.text
             elif e.tag == "inbodydescription": member.ibdescr = e
-            elif e.tag == "briefdescription": member.brief = e
-            elif e.tag == "initializer": member.init = e
+            elif e.tag == "briefdescription": member.brief_description = e
+            elif e.tag == "initializer": member.initializer = e
             elif e.tag == "includes": member.include_files.append(e)
-            elif e.tag == "detaileddescription": member.details = e
+            elif e.tag == "detaileddescription": member.detailed_description = e
             elif e.tag == "templateparamlist": member.template_params = e
             elif e.tag == "enumvalue": member.enum_values.append(e)
             elif e.tag == "basecompoundref": member.inherits_from.append(e)
@@ -212,7 +212,7 @@ def read_xml_memberdef(xml_node, parent_decl, kind):
             member.parameters.text += ")"    
         return member
         
-    else: return declarations[id]
+    else: return declarations[doxygen_id]
 
 
 
@@ -263,16 +263,16 @@ def urlify_string(string):
 # each declaration to point to the containing node
 def build_hierarchy(parent_decl):
     if not parent_decl.is_collection: 
-        for id in parent_decl.members:
-            if id in declarations:
-                member = declarations[id]
+        for doxygen_id in parent_decl.members:
+            if doxygen_id in declarations:
+                member = declarations[doxygen_id]
                 # One node will usually be visited multiple times, only update "parent" once
                 if member.parent == None:
                     member.parent = parent_decl
-                    build_hierarchy(declarations[id])
+                    build_hierarchy(declarations[doxygen_id])
                     # Member functions are usually available by including their classes header
-                    if declarations[id].include_files == []:
-                        declarations[id].include_files = parent_decl.include_files
+                    if declarations[doxygen_id].include_files == []:
+                        declarations[doxygen_id].include_files = parent_decl.include_files
 
 
 # Maps fully scoped namespace names to their Declaration object.
@@ -280,12 +280,12 @@ def build_hierarchy(parent_decl):
 namespaces = {}
 
 # Stupidly try to build a hierarchy for every declaration (not as recursive as possible)
-for key, val in declarations.items():
+for doxygen_id, decl in declarations.items():
     # Add parents where a hierarchy exists in the XML
-    build_hierarchy(val)
+    build_hierarchy(decl)
     # Namespaces don't contain each other, remember their full names to resolve them later
-    if val.kind == "namespace":
-        namespaces[val.name] = key
+    if decl.kind == "namespace":
+        namespaces[decl.name] = doxygen_id
 
 
 
@@ -296,15 +296,16 @@ root.name = ""
 
 # Assign all orphaned nodes to "root" so they will appear on the index page.
 # This applies for all global namespace members and preprocessor #defines.
-for key, val in declarations.items(): 
-    if val.parent == None:
+for doxygen_id, decl in declarations.items(): 
+    if decl.parent == None:
         new_parent = root
         # Resolve nested namespaces by their scoped name
-        if val.kind == "namespace" and "::" in val.name:
-            container = namespaces[val.name[0:val.name.rfind("::")]]
-            if container and container in declarations: new_parent = declarations[container]
-        val.parent = new_parent
-        new_parent.all_members.add(key)
+        if decl.kind == "namespace" and "::" in decl.name:
+            container = namespaces[decl.name[0:decl.name.rfind("::")]]
+            if container and container in declarations:
+                new_parent = declarations[container]
+        decl.parent = new_parent
+        new_parent.all_members.add(doxygen_id)
 
 
 
@@ -347,25 +348,26 @@ def init_names(decl):
     # Non-inline (i.e. integrated in their parent's page) declarations have an own url,
     # inline docs are identified by an <a>nchor inside their parent
     if not decl.inline_doc:
-        decl.url = make_page_url(decl) + ".html"
-    elif decl.parent.url != None: 
-        decl.anchor = make_page_url(decl)
-        decl.url = decl.parent.url + "#" + decl.anchor
+        decl.target_url = make_page_url(decl) + ".html"
+    elif decl.parent.target_url != None: 
+        decl.target_url_anchor = make_page_url(decl)
+        decl.target_url = decl.parent.target_url + "#" + decl.target_url_anchor
 
     # Proceed recursively for all members
     if not decl.is_collection:
-        for id in decl.all_members:
-            if id in declarations: init_names(declarations[id])
+        for doxygen_id in decl.all_members:
+            if doxygen_id in declarations:
+                init_names(declarations[doxygen_id])
 
 
 # Recursively generate name and full_name fields
 init_names(root)
-root.title = localize("index")
-root.url = "index.html"
+root.page_title = localize("index")
+root.target_url = "index.html"
 
         
 # Replaces template parameters in a string with '<...>'
-def abbrev(text, depth, skipped=False):
+def collapse_templates(text, depth, skipped=False):
     if text == None: return None, depth
     out = ""
     for c in text:
@@ -384,14 +386,14 @@ def abbrev(text, depth, skipped=False):
     
 def to_html_abbrev(tree, dest, nolinks=False):
     depth = 0
-    dest.text, depth = abbrev(tree.text, depth)
+    dest.text, depth = collapse_templates(tree.text, depth)
     length = len(dest.text) if dest.text != None else 0
     for e in tree.iterchildren(tag="ref"):
         a = etree.SubElement(dest, "a" if not nolinks else "span")
         if e.get("refid") in declarations and not nolinks: 
-            a.set("href", declarations[e.get("refid")].url)
-        a.text, depth = abbrev(e.text, depth)
-        a.tail, depth = abbrev(e.tail, depth)
+            a.set("href", declarations[e.get("refid")].target_url)
+        a.text, depth = collapse_templates(e.text, depth)
+        a.tail, depth = collapse_templates(e.tail, depth)
         if a.text != None: length += len(a.text) 
         if a.tail != None: length += len(a.tail)
     return length
@@ -410,8 +412,8 @@ def to_html(tree, dest, nolinks=False):
         if e.tag == "ref":
             if not nolinks:
                 a = etree.SubElement(dest, "a")
-                if e.get("refid") and e.get("refid") in declarations and declarations[e.get("refid")].url != None:
-                    a.set("href", declarations[e.get("refid")].url)
+                if e.get("refid") and e.get("refid") in declarations and declarations[e.get("refid")].target_url != None:
+                    a.set("href", declarations[e.get("refid")].target_url)
             else:
                 a = etree.SubElement(dest, "span")
             a.tail = e.tail; addlen(e.tail)
@@ -550,8 +552,8 @@ def func_var_decl(decl, dest, nolinks=False, abbrev=False):
     span = etree.SubElement(dest, "span")
     span.set("class", "type")
     if decl.kind != "define":
-        if not abbrev: length += to_html(decl.type, span, nolinks)
-        else: length += to_html_abbrev(decl.type, span, nolinks)
+        if not abbrev: length += to_html(decl.data_type, span, nolinks)
+        else: length += to_html_abbrev(decl.data_type, span, nolinks)
     else:
         span.text = "#define"
         length += 7
@@ -565,11 +567,11 @@ def func_var_decl(decl, dest, nolinks=False, abbrev=False):
         span.set("class", "arglist")
         if not abbrev: to_html(decl.parameters, span, nolinks)
         else: to_html_abbrev(decl.parameters, span, nolinks)
-    if decl.init != None and not abbrev:
+    if decl.initializer != None and not abbrev:
         span = etree.SubElement(dest, "span")
         span.set("class", "init")
         span.text = " "
-        to_html(decl.init, span, nolinks)
+        to_html(decl.initializer, span, nolinks)
     
 
 def typedef_decl(decl, dest):
@@ -582,7 +584,7 @@ def typedef_decl(decl, dest):
     span.text = decl.name
     span = etree.Element("span")
     span.set("class", "type")
-    length = to_html(decl.type, span)
+    length = to_html(decl.data_type, span)
     if length + len(decl.name) > 30:
         etree.SubElement(dest, "br")
     etree.SubElement(dest, "span").text = " = "
@@ -596,9 +598,9 @@ def define_decl(decl, dest):
 def base_names(derived):
     names = set([derived.name])
     for base in derived.inherits_from:
-        id = base.get("refid")
-        if id in declarations: 
-            names = names.union(base_names(declarations[id]))
+        doxygen_id = base.get("refid")
+        if doxygen_id in declarations: 
+            names = names.union(base_names(declarations[doxygen_id]))
     return names
     
     
@@ -620,7 +622,7 @@ def struct_decl(decl, dest):
         span.text += base.get("prot") + " "
         if base.get("virt") == "virtual": span.text += "virtual "
         if base.get("refid") in declarations:
-            etree.SubElement(dest, "a", href = declarations[base.get("refid")].url).text = base.text
+            etree.SubElement(dest, "a", href = declarations[base.get("refid")].target_url).text = base.text
         else: etree.SubElement(dest, "span").text = base.text
         
                     
@@ -663,8 +665,8 @@ def add_nav_section(name, kinds):
                 ul = etree.Element("ul")
                 global_nav.append(ul)
             for e in sorted(global_nav_dict[kind], key=lambda x: x.name):
-                etree.SubElement(etree.SubElement(ul, "li"), "a", href = e.url).text = \
-                    e.title if e.title != None else e.name
+                etree.SubElement(etree.SubElement(ul, "li"), "a", href = e.target_url).text = \
+                    e.page_title if e.page_title != None else e.name
     
 add_nav_section("groups", [ "group" ])
 add_nav_section("special pages", [ "page" ])
@@ -687,7 +689,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
         decls = [ min_decl ]
     else: specializations = []
     full_name = decls[0].full_name
-    page_title = decls[0].title.title() if decls[0].title != None else decls[0].name
+    page_title = decls[0].page_title.title() if decls[0].page_title != None else decls[0].name
             
     caption = etree.Element("h2")    
     links = copy.deepcopy(parent_links)
@@ -695,7 +697,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
         links[len(links)-1].tail = "::"
     child_links = copy.deepcopy(links)
     if full_name != "":
-        etree.SubElement(child_links, "a", href=decls[0].url).text = decls[0].name
+        etree.SubElement(child_links, "a", href=decls[0].target_url).text = decls[0].name
     etree.SubElement(links, "span").text = page_title
     links.set("class", "page-caption")
     links.tail = " "
@@ -721,7 +723,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
     child_nav_up = etree.SubElement(child_nav_head, "a")
     child_nav_up.text = page_title
     child_nav_up.set("class", "nav-up")
-    child_nav_up.set("href", decls[0].url)
+    child_nav_up.set("href", decls[0].target_url)
     
     def add_nav_item(ul, name, href):
         etree.SubElement(etree.SubElement(ul, "li"), "a", href=href).text = name
@@ -751,7 +753,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             a = etree.SubElement(include_span, "a")
             if inc.get("refid") in declarations:
                 include_file = declarations[inc.get("refid")]
-                a.set("href", include_file.url)
+                a.set("href", include_file.target_url)
                 a.text = include_file.full_name
             else:
                 a.text = inc.text
@@ -791,10 +793,10 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             struct_decl(decl, p)
                    
         def_div.set("class", "def")
-        if decl.brief != None:
+        if decl.brief_description != None:
             div = etree.SubElement(def_div, "div")
             div.set("class", "brief")
-            to_html(decl.brief, div)
+            to_html(decl.brief_description, div)
             
         if decl.kind == "enum":
             div = etree.SubElement(def_div, "div")
@@ -813,19 +815,19 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
                 xp = val.xpath("briefdescription")
                 if len(xp) > 0: to_html(xp[0], td)
             
-        if decl.details != None:
+        if decl.detailed_description != None:
             div = etree.SubElement(def_div, "div")
             div.set("class", "details")
-            to_html(decl.details, div)
+            to_html(decl.detailed_description, div)
             
         base_classes = base_names(decl)  
         
         children = []
             
         members = dict()
-        for id in decl.all_members:
-            if id not in declarations: continue
-            e = declarations[id]
+        for doxygen_id in decl.all_members:
+            if doxygen_id not in declarations: continue
+            e = declarations[doxygen_id]
             
             if e.visibility == "private" or e.visibility == "protected": key = e.visibility
             else: key = "public"
@@ -881,15 +883,15 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
                                 if f.name == "~" + decl.name: dtors.append(f)
                             if len(dtors) > 0: 
                                 children.append((dtors, full_name, child_links))
-                                href = dtors[0].url
+                                href = dtors[0].target_url
                             else: continue
                         elif not e[0].inline_doc:
                             children.append((e, full_name, child_links))
-                            href = min(e, key=lambda x: x.name).url
+                            href = min(e, key=lambda x: x.name).target_url
                         else: 
                             for f in sorted(e, key=lambda x: x.name):
-                                anchor = f.anchor
-                                href = f.url
+                                anchor = f.target_url_anchor
+                                href = f.target_url
                                 li = etree.SubElement(inline_ul, "li")
                                 li.set("class", "details def")
                                 decl_div = etree.SubElement(li, "div")
@@ -900,20 +902,20 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
                                     define_decl(f, etree.SubElement(decl_div, "p"))
                                 else:
                                     func_var_decl(f, etree.SubElement(decl_div, "p"))                                
-                                if f.brief != None:
+                                if f.brief_description != None:
                                     brief = etree.SubElement(li, "div")
                                     brief.set("class", "brief")
-                                    to_html(f.brief, brief)
-                                if f.details != None:
+                                    to_html(f.brief_description, brief)
+                                if f.detailed_description != None:
                                     details = etree.SubElement(li, "div")
                                     details.set("class", "details")
-                                    to_html(f.details, details)
+                                    to_html(f.detailed_description, details)
                         tr = etree.SubElement(table, "tr")
                         if e[0].kind not in [ "group", "file", "page", "dir" ]:
                             td = etree.SubElement(tr, "td", )
                             td.set("class", "decltype")
                             if e[0].kind == "variable": 
-                                to_html_abbrev(e[0].type, td)
+                                to_html_abbrev(e[0].data_type, td)
                             elif e[0].kind == "function": 
                                 if group_name == "(constructor)": td.text = "constructor"
                                 elif group_name == "(destructor)": td.text = "destructor"
@@ -925,14 +927,14 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
                         td.set("class", "declname")        
                         a = etree.SubElement(td, "a", href = href)
                         a.set("class", "name")
-                        if e[0].title != None: a.text = e[0].title
+                        if e[0].page_title != None: a.text = e[0].page_title
                         elif group_name == "(constructor)": a.text = decl.name
                         elif group_name == "(destructor)": a.text = "~" + decl.name
                         else: a.text = group_name
                         span = etree.SubElement(td, "span")           
                         span.set("class", "init")
                         if e[0].kind == "typedef": 
-                            to_html_abbrev(e[0].type, span)
+                            to_html_abbrev(e[0].data_type, span)
                             span.text = " = " + (span.text if span.text else "")
                         add_nav_item(nav_ul, a.text, href)
                         
@@ -965,7 +967,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
         table = etree.SubElement(div, "table")
         table.set("class", "decllist")
         for s in specializations:
-            href = s.url
+            href = s.target_url
             children.append(([s], parent, parent_links))
             tr = etree.SubElement(table, "tr")
             td = etree.SubElement(tr, "td")
@@ -973,8 +975,8 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             td.text = s.kind
             td = etree.SubElement(tr, "td")
             td.set("class", "declname")
-            add_nav_item(nav_ul, s.name, s.url)
-            a = etree.SubElement(td, "a", href=s.url)
+            add_nav_item(nav_ul, s.name, s.target_url)
+            a = etree.SubElement(td, "a", href=s.target_url)
             a.set("class", "name")
             a.text = s.name
             
@@ -982,7 +984,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
     
     if len(decls) > 1 or len(inline) > 0:
         page.append(inline)
-    write_html(page_title, nav, page, output_dir + "/" + decls[0].url)
+    write_html(page_title, nav, page, output_dir + "/" + decls[0].target_url)
     
     for all_decls, parent, parent_links in children:
         child_decls = []
