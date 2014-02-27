@@ -101,6 +101,10 @@ a.nav-up  {
     width: 100%;
 }
 
+#content p {
+    margin-bottom:8px;
+}
+
 a {
     text-decoration: none;
     color: #2020a0;

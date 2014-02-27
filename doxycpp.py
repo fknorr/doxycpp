@@ -313,7 +313,7 @@ for doxygen_id, decl in declarations.items():
 # In the XML, some names include scope while others don't (I guess nobody checked the XML output
 # for consistency). This function ensures "name" is scope-less while adding full scope prefixes
 # to full_name based on the members/parent hierarchy built above.
-def init_names(decl):
+def generate_names(decl):
     # Rename anonymous enums
     if len(decl.name) > 0 and decl.name[0] == '@':
         decl.name = "(anonymous)"
@@ -357,31 +357,33 @@ def init_names(decl):
     if not decl.is_collection:
         for doxygen_id in decl.all_members:
             if doxygen_id in declarations:
-                init_names(declarations[doxygen_id])
+                generate_names(declarations[doxygen_id])
 
 
 # Recursively generate name and full_name fields
-init_names(root)
+generate_names(root)
 root.page_title = localize("index")
 root.target_url = "index.html"
 
         
-# Replaces template parameters in a string with '<...>'
-def collapse_templates(text, depth, skipped=False):
-    if text == None: return None, depth
-    out = ""
-    for c in text:
-        if c == '<':
-            depth += 1
-            if depth == 1: out += c
-        elif c == '>' and depth > 0: 
-            depth -= 1
-            if depth == 0:
-                if skipped: out += " ... "
-                out += c
-        elif depth > 0: skipped = True
-        else: out += c
-    return out, depth
+# Replaces template parameters in a string with '< ... >' for brief declarations and type names
+# of variables
+def collapse_templates(string, template_depth):
+    if string == None: return None, template_depth
+    result = ""
+    skipped_something=False
+    for char in string:
+        if char == '<':
+            template_depth += 1
+            if template_depth == 1: result += char
+        elif char == '>' and template_depth > 0: 
+            template_depth -= 1
+            if template_depth == 0:
+                if skipped_something: result += " ... "
+                result += char
+        elif template_depth > 0: skipped_something = True
+        else: result += char
+    return result, template_depth
 
     
 def to_html_abbrev(tree, dest, nolinks=False):
@@ -416,10 +418,12 @@ def to_html(tree, dest, nolinks=False):
                     a.set("href", declarations[e.get("refid")].target_url)
             else:
                 a = etree.SubElement(dest, "span")
+            a.text = e.text; addlen(e.text)
             a.tail = e.tail; addlen(e.tail)
-            a.text = e.text; addlen(e.tail)
         elif e.tag == "para":
-            length[0] += to_html(e, dest)
+            p = etree.SubElement(dest, "p")
+            length[0] += to_html(e, p, nolinks)
+            p.tail = e.tail
         elif e.tag == "linebreak":
             etree.SubElement(dest, "br").tail = e.tail
         elif e.tag == "simplesect":
@@ -626,23 +630,39 @@ def struct_decl(decl, dest):
         else: etree.SubElement(dest, "span").text = base.text
         
                     
-# Wraps a <body> tag in a html file, writes it
-def write_html(title, nav, cont, url): 
+# Wraps a navigation and page content XHTML into a html file, writing it
+#   page_title: What should appear in the <title> tag
+#   navigation_html: A XHTML node for the navigation sidebar (left hand side)
+#   content_html: A XHTML node for the page content (right hand side)
+#   file_name: The file to write to.
+def write_html(page_title, navigation_html, content_html, file_name): 
     html = etree.Element("html", nsmap = { None: "http://www.w3.org/1999/xhtml"} )
+    # <html>
+    
     head = etree.SubElement(html, "head")
-    etree.SubElement(head, "title").text = title
+    #   <head>
+    etree.SubElement(head, "page_title").text = page_title
     meta = etree.SubElement(head, "meta")
     meta.set("http-equiv", "Content-Type")
     meta.set("content", "text/html, charset=utf-8")
     etree.SubElement(head, "link", rel="stylesheet", href="style.css")
     etree.SubElement(head, "link", rel="stylesheet", media="print", href="print.css")
-    tr = etree.SubElement(etree.SubElement(etree.SubElement(html, "body"), "table"), "tr", id="outer")
-    etree.SubElement(tr, "td", id="nav-td").append(nav)
-    etree.SubElement(tr, "td", id="content-td").append(cont)
-    f = open(url, "wb")
-    f.write(etree.tostring(html, pretty_print=True, encoding='UTF-8', 
+    # </head>
+
+    body = etree.SubElement(html, "body");
+    # <body>
+    outer_tr = etree.SubElement(etree.SubElement(body, "table"), "tr", id="outer")
+    # <table><tr>
+    etree.SubElement(outer_tr, "td", id="navigation_html-td").append(navigation_html)
+    etree.SubElement(outer_tr, "td", id="content-td").append(content_html)
+    # </table></tr>
+    # </body>
+    # </html>
+    
+    output_file = open(file_name, "wb")
+    output_file.write(etree.tostring(html, pretty_print=True, encoding='UTF-8', 
                            method = "html", doctype='<!DOCTYPE html>'))
-    f.close()
+    output_file.close()
     
     
     
