@@ -219,7 +219,15 @@ def read_xml_memberdef(xml_node, parent_decl, kind):
 # Parse all .xml files in the current directory, updating "declarations"
 for file_name in os.listdir():
     if len(file_name) > 3 and file_name[-4:] == ".xml" and os.path.isfile(file_name):
-        xtree = etree.parse(file_name)
+        try:
+            parser = etree.XMLParser(recover=True)
+            with open(file_name, 'rb') as file:
+                parser.feed(file.read())
+                xtree = parser.close()
+        except etree.XMLSyntaxError as e:
+            print('Skipping file {}: {}'.format(file_name, e), file=sys.stderr)
+            continue
+
         # <compounddef>s contain <memberdef>s and <innerclass>es, which hold the main information
         compounds = xtree.xpath("/doxygen/compounddef")
         for xml_node in compounds: 
@@ -255,7 +263,7 @@ def urlify_string(string):
     # Ensure there's a "-" before the hash
     if not last_was_special_char: result += '-'
     result += hashlib.md5(bytearray(string, 'utf-8')).hexdigest()[0:4]
-    return result
+    return result[:220]
 
 
 
@@ -301,9 +309,12 @@ for doxygen_id, decl in declarations.items():
         new_parent = root
         # Resolve nested namespaces by their scoped name
         if decl.kind == "namespace" and "::" in decl.name:
-            container = namespaces[decl.name[0:decl.name.rfind("::")]]
-            if container and container in declarations:
-                new_parent = declarations[container]
+            try:
+                container = namespaces[decl.name[0:decl.name.rfind("::")]]
+                if container and container in declarations:
+                    new_parent = declarations[container]
+            except KeyError:
+                pass
         decl.parent = new_parent
         new_parent.all_members.add(doxygen_id)
 
@@ -556,8 +567,9 @@ def func_var_decl(decl, dest, nolinks=False, abbrev=False):
     span = etree.SubElement(dest, "span")
     span.set("class", "type")
     if decl.kind != "define":
-        if not abbrev: length += to_html(decl.data_type, span, nolinks)
-        else: length += to_html_abbrev(decl.data_type, span, nolinks)
+        if decl.data_type is not None:
+            if not abbrev: length += to_html(decl.data_type, span, nolinks)
+            else: length += to_html_abbrev(decl.data_type, span, nolinks)
     else:
         span.text = "#define"
         length += 7
@@ -862,7 +874,7 @@ def tree(decls, nav=None, parent="", parent_links=etree.Element("span")):
             cat = members[key]       
             
             if e.name in base_classes: group_name = "(constructor)"
-            elif e.name[0] == '~': group_name = "(destructor)"
+            elif e.name[:1] == '~': group_name = "(destructor)"
             elif "<" in e.name: group_name = e.name[0 : e.name.find("<")].strip()
             else: group_name = e.name
             
